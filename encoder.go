@@ -13,7 +13,7 @@ import (
 
 // ColorUsed - Colors and bounds
 type ColorUsed struct {
-	cor        color.Color
+	color      color.Color
 	count      int
 	rectangles []image.Rectangle
 }
@@ -52,6 +52,45 @@ func convertRectangleToString(r image.Rectangle) string {
 	return strconv.Itoa(x1) + "," + strconv.Itoa(y1) + "," + strconv.Itoa(x2) + "," + strconv.Itoa(y2)
 }
 
+func inRectangles(rcs []image.Rectangle, x int, y int) bool {
+	for _, rect := range rcs {
+		if rect.Min.X <= x && rect.Max.X >= x && rect.Min.Y <= y && rect.Max.Y >= y {
+			return true
+		}
+	}
+	return false
+}
+
+func createColorRect(imageData image.Image, colorUsed *ColorUsed, x0 int, y0 int) image.Rectangle {
+	bounds := imageData.Bounds()
+	width := bounds.Max.X
+	height := bounds.Max.Y
+	col := colorUsed.color
+
+	x1 := width - 1
+	for x := x0; x < width; x++ {
+		c := imageData.At(x, y0)
+		if c != col || inRectangles(colorUsed.rectangles, x, y0) {
+			x1 = x - 1
+			break
+		}
+	}
+
+	y1 := height - 1
+	dif := false
+	for y := y0 + 1; y < height && !dif; y++ {
+		for x := x0; x <= x1; x++ {
+			c := imageData.At(x, y)
+			if c != col || inRectangles(colorUsed.rectangles, x, y) {
+				y1 = y - 1
+				dif = true
+				break
+			}
+		}
+	}
+	return image.Rect(x0, y0, x1, y1)
+}
+
 func readFile(arq string) ([]ColorUsed, error) {
 	var colors []ColorUsed
 	file, err1 := os.Open(arq)
@@ -72,7 +111,7 @@ func readFile(arq string) ([]ColorUsed, error) {
 					colorUsed := colorCountMap[col]
 					if colorUsed == nil {
 						colorUsed = new(ColorUsed)
-						colorUsed.cor = col
+						colorUsed.color = col
 						colorUsed.count = 1
 						colorUsed.rectangles = []image.Rectangle{}
 
@@ -99,22 +138,9 @@ func readFile(arq string) ([]ColorUsed, error) {
 					for y := 0; y < height; y++ {
 						for x := 0; x < width; x++ {
 							col := imageData.At(x, y)
-							if colorUsed.cor == col {
-								if x == width-1 {
-									colorUsed.rectangles = append(colorUsed.rectangles, image.Rect(x, y, x, y))
-								}
-								for x2 := x + 1; x2 < width; x2++ {
-									col := imageData.At(x2, y)
-									if colorUsed.cor != col {
-										colorUsed.rectangles = append(colorUsed.rectangles, image.Rect(x, y, x2-1, y))
-										x = x2 - 1
-										break
-									}
-									if x2 == width-1 {
-										colorUsed.rectangles = append(colorUsed.rectangles, image.Rect(x, y, x2, y))
-										x = x2
-										break
-									}
+							if colorUsed.color == col {
+								if !inRectangles(colorUsed.rectangles, x, y) {
+									colorUsed.rectangles = append(colorUsed.rectangles, createColorRect(imageData, colorUsed, x, y))
 								}
 							}
 						}
@@ -141,12 +167,12 @@ func writeFile(arq string, colors []ColorUsed) error {
 	for i, colorUsed := range colors {
 		if i > 0 {
 			f.WriteString("|")
-			f.WriteString(convertColorToString(colorUsed.cor) + "=")
+			f.WriteString(convertColorToString(colorUsed.color) + "=")
 			for _, rect := range colorUsed.rectangles {
 				f.WriteString(convertRectangleToString(rect) + ";")
 			}
 		} else {
-			f.WriteString(convertColorToString(colorUsed.cor))
+			f.WriteString(convertColorToString(colorUsed.color))
 		}
 	}
 	fmt.Println(totalBytes)
